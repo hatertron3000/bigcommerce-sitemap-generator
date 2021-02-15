@@ -5,8 +5,8 @@ This node app will query your BC store's API to retrieve URLs for the following 
 - Visible Products
 - All Categories
 - All Brands
-- All Web Pages
-- All Blog Posts
+- Web Pages Visible in the Menu
+- Published Blog Posts
 
 The app creates multiple XML sitemaps, a sitemap index, then uploads them your store via WebDAV where Google can access the sitemap index.
 

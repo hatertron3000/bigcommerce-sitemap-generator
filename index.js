@@ -70,6 +70,7 @@ const getPageUrls = async (count, page = 1, limit = 250, urls = []) => {
         const pages = await bigCommerceV2.get(`/pages?limit=${limit}&page=${page}`)
         const newUrls = pages
             .filter(page => page.url ? true : false)
+            .filter(page => page.is_visible ? true : false)
             .map(page => page.url)
         urls = urls.concat(newUrls)
         if (page * limit >= count)
@@ -94,6 +95,7 @@ const getBlogPostUrls = async (count, page = 1, limit = 250, urls = []) => {
     try {
         const posts = await bigCommerceV2.get(`/blog/posts?limit=${limit}&page=${page}`)
         const newUrls = posts
+            .filter(post => post.is_published ? true : false)
             .map(post => post.url)
         urls = urls.concat(newUrls)
         if (page * limit >= count)
