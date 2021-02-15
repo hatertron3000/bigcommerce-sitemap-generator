@@ -5,8 +5,8 @@ This node app will query your BC store's API to retrieve URLs for the following 
 - Products
 - Categories
 - Brands
-- Web Pages (TODO)
-- Blog Posts (TODO)
+- Web Pages
+- Blog Posts
 
 The app creates multiple XML sitemaps, a sitemap index, then uploads them your store via WebDAV where Google can access the sitemap index.
 
@@ -16,5 +16,5 @@ The app creates multiple XML sitemaps, a sitemap index, then uploads them your s
 3. Run `npm run dev`
 
 ## TODO
-- Finish Blog Posts
+- Automatically delete older sitemaps
 - Create a lambda deployment package script

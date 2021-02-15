@@ -42,8 +42,9 @@ const getCatalogUrls = async (type, page = 1, limit = 250, urls = []) => {
     const allowedTypes = ['products', 'brands', 'categories']
     if (!allowedTypes.includes(type)) throw new Error('The requested resource requested is not supported by this method')
     const includeFields = 'custom_url'
+    const isVisibleParam = type === 'products' ? '&is_visible=true' : ''
     try {
-        const { data, meta } = await bigCommerceV3.get(`/catalog/${type}?limit=${limit}&page=${page}&include_fields=${includeFields}`)
+        const { data, meta } = await bigCommerceV3.get(`/catalog/${type}?limit=${limit}&page=${page}&include_fields=${includeFields}${isVisibleParam}`)
         const newUrls = data.map(product => product.custom_url.url)
         urls = urls.concat(newUrls)
         if (meta.pagination.total > meta.pagination.current_page) {
@@ -59,11 +60,14 @@ const getCatalogUrls = async (type, page = 1, limit = 250, urls = []) => {
 }
 
 const getPageUrls = async (count, page = 1, limit = 250, urls = []) => {
-    if (!count) count = await bigCommerceV2.get(`/pages/count`)
+    if (!count) {
+        const data = await bigCommerceV2.get(`/pages/count`)
+        count = data.count
+    }
+    // Return empty array if count is 0
+    if (!count) return urls
     try {
         const pages = await bigCommerceV2.get(`/pages?limit=${limit}&page=${page}`)
-        // Guard statement
-        if (!pages.length) return urls
         const newUrls = pages
             .filter(page => page.url ? true : false)
             .map(page => page.url)
@@ -73,6 +77,30 @@ const getPageUrls = async (count, page = 1, limit = 250, urls = []) => {
         else {
             page++
             return getPageUrls(count, page, limit, urls)
+        }
+    } catch (err) {
+        console.error(err)
+        throw err
+    }
+}
+
+const getBlogPostUrls = async (count, page = 1, limit = 250, urls = []) => {
+    if (!count) {
+        const data = await bigCommerceV2.get(`/blog/posts/count`)
+        count = data.count
+    }
+    // Return empty array if count is 0
+    if (!count) return urls
+    try {
+        const posts = await bigCommerceV2.get(`/blog/posts?limit=${limit}&page=${page}`)
+        const newUrls = posts
+            .map(post => post.url)
+        urls = urls.concat(newUrls)
+        if (page * limit >= count)
+            return urls
+        else {
+            page++
+            return getBlogPostUrls(count, page, limit, urls)
         }
     } catch (err) {
         console.error(err)
@@ -109,6 +137,7 @@ const job = async () => {
             await webdav.createDirectory(defaultWebdavPath)
         }
 
+        const blogPostUrls = await getBlogPostUrls()
         const pageUrls = await getPageUrls()
         const productUrls = await getCatalogUrls('products')
         const categoryUrls = await getCatalogUrls('categories')
@@ -119,6 +148,7 @@ const job = async () => {
             .concat(productUrls)
             .concat(brandUrls)
             .concat(pageUrls)
+            .concat(blogPostUrls)
 
         const sitemaps = await createSitemapsFromUrls(allUrls)
 
