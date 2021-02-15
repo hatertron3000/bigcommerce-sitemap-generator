@@ -3,8 +3,8 @@ BigCommerce can automatically generate a single sitemap with up to 50k URLs. How
 
 This node app will query your BC store's API to retrieve URLs for the following entities:
 - Products
-- Categories (TODO)
-- Brands (TODO)
+- Categories
+- Brands
 - Web Pages (TODO)
 - Blog Posts (TODO)
 
@@ -16,5 +16,5 @@ The app creates multiple XML sitemaps, a sitemap index, then uploads them your s
 3. Run `npm run dev`
 
 ## TODO
-- Finish everything except Products
+- Finish Blog Posts
 - Create a lambda deployment package script
