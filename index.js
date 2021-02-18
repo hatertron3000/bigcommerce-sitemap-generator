@@ -6,7 +6,6 @@ const { createClient, AuthType } = require('webdav')
 const maxUrlsPerSitemap = 50000
 const defaultWebdavPath = `/content/sitemaps`
 const sitemapIndexFilename = 'sitemap-index.xml'
-const publicWebdavUrl = process.env.WEBDAV_URL.replace('/dav', '')
 
 const webdav = createClient(
     process.env.WEBDAV_URL,
@@ -37,6 +36,19 @@ const bigCommerceV2 = new BigCommerce({
     apiVersion: 'v2' // Default is v2
 })
 
+const getStorefrontUrl = async () => {
+    try {
+        const res = await bigCommerceV2.get('/store')
+        const { secure_url } = res
+        console.log(`Storefront URL is ${secure_url}`)
+        return secure_url
+    } catch (err) {
+        console.error(err)
+        throw err
+    }
+}
+
+
 
 const getCatalogUrls = async (type, page = 1, limit = 250, urls = []) => {
     const allowedTypes = ['products', 'brands', 'categories']
@@ -44,6 +56,7 @@ const getCatalogUrls = async (type, page = 1, limit = 250, urls = []) => {
     const includeFields = 'custom_url'
     const isVisibleParam = type === 'products' ? '&is_visible=true' : ''
     try {
+        console.log(`Getting page ${page} of ${type} urls.`)
         const { data, meta } = await bigCommerceV3.get(`/catalog/${type}?limit=${limit}&page=${page}&include_fields=${includeFields}${isVisibleParam}`)
         const newUrls = data.map(product => product.custom_url.url)
         urls = urls.concat(newUrls)
@@ -67,6 +80,7 @@ const getPageUrls = async (count, page = 1, limit = 250, urls = []) => {
     // Return empty array if count is 0
     if (!count) return urls
     try {
+        console.log(`Getting page ${page} of Web Page urls`)
         const pages = await bigCommerceV2.get(`/pages?limit=${limit}&page=${page}`)
         const newUrls = pages
             .filter(page => page.url ? true : false)
@@ -93,6 +107,7 @@ const getBlogPostUrls = async (count, page = 1, limit = 250, urls = []) => {
     // Return empty array if count is 0
     if (!count) return urls
     try {
+        console.log(`Getting page ${page} of blog post URLs.`)
         const posts = await bigCommerceV2.get(`/blog/posts?limit=${limit}&page=${page}`)
         const newUrls = posts
             .filter(post => post.is_published ? true : false)
@@ -110,7 +125,8 @@ const getBlogPostUrls = async (count, page = 1, limit = 250, urls = []) => {
     }
 }
 
-const createSitemapsFromUrls = async (urls) => {
+const createSitemapsFromUrls = async (urls, storefrontUrl) => {
+    console.log(`Generating and uploading sitemaps from URLs`)
     const sitemaps = []
     for (let i = 0; i < urls.length; i += maxUrlsPerSitemap) {
         const urlsChunk = urls.slice(i, (i + maxUrlsPerSitemap))
@@ -127,7 +143,7 @@ const createSitemapsFromUrls = async (urls) => {
 
         // Upload via webdav
         await webdav.putFileContents(`${defaultWebdavPath}/${filename}`, xml)
-        sitemaps.push(`${publicWebdavUrl}${defaultWebdavPath}/${filename}`)
+        sitemaps.push(`${storefrontUrl}${defaultWebdavPath}/${filename}`)
     }
     return sitemaps
 }
@@ -139,20 +155,23 @@ const job = async () => {
             await webdav.createDirectory(defaultWebdavPath)
         }
 
+        const storefrontUrl = await getStorefrontUrl()
+
         const blogPostUrls = await getBlogPostUrls()
         const pageUrls = await getPageUrls()
         const productUrls = await getCatalogUrls('products')
         const categoryUrls = await getCatalogUrls('categories')
         const brandUrls = await getCatalogUrls('brands')
 
-
-        const allUrls = categoryUrls
+        const allPaths = categoryUrls
             .concat(productUrls)
             .concat(brandUrls)
             .concat(pageUrls)
             .concat(blogPostUrls)
 
-        const sitemaps = await createSitemapsFromUrls(allUrls)
+        const allUrls = allPaths.map(path => storefrontUrl + path)
+
+        const sitemaps = await createSitemapsFromUrls(allUrls, storefrontUrl)
 
         // create sitemap index
         const sitemapsJson = sitemaps.map(sitemap => (
@@ -171,7 +190,7 @@ const job = async () => {
 
         console.log(`Total Pages in Sitemaps: ${allUrls.length}`)
         console.log(`Individual Sitemaps: `, sitemaps)
-        console.log(`Sitemap index: `, `${publicWebdavUrl}${sitemapIndexUrl}`)
+        console.log(`Sitemap index: `, `${storefrontUrl}${sitemapIndexUrl}`)
     } catch (err) {
         console.log(`Job failed with error`, err)
     }
