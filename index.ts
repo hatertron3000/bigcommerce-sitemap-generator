@@ -7,6 +7,23 @@ const maxUrlsPerSitemap = 50000
 const defaultWebdavPath = `/content/sitemaps`
 const sitemapIndexFilename = 'sitemap-index.xml'
 
+interface url {
+    loc: string,
+    priority?: number,
+} 
+
+interface customField {
+    id: number,
+    name: string,
+    value: string
+}
+
+interface product {
+    id: number,
+    custom_url: Object,
+    custom_fields: customField[]
+}
+
 const webdav = createClient(
     process.env.WEBDAV_URL,
     {
@@ -36,29 +53,63 @@ const bigCommerceV2 = new BigCommerce({
     apiVersion: 'v2' // Default is v2
 })
 
-const getStorefrontUrl = async () => {
+async function getStorefrontUrl(): Promise<string|void>  {
     try {
         const res = await bigCommerceV2.get('/store')
         const { secure_url } = res
         console.log(`Storefront URL is ${secure_url}`)
         return secure_url
     } catch (err) {
-        console.error(err)
+        const d = new Date()
+        console.error(`${d.toUTCString()} Error retrieving storefront URL`, err)
         throw err
     }
 }
 
+function getPriority(product: product): number|void {
+    const priorityField = product
+                    .custom_fields
+                    .find(field => field
+                                    .name
+                                    .trim()
+                                    .toLowerCase() === 'priority'),
+    priority = priorityField ? priorityField.value : null
+    if(priority
+        && !isNaN(parseFloat(priority))
+        && parseFloat(priority) >= 0
+        && parseFloat(priority) <= 1) 
+        return Math.round(parseFloat(priority) * 1e1 ) / 1e1
+}
 
 
-const getCatalogUrls = async (type, page = 1, limit = 250, urls = []) => {
+async function getCatalogUrls(
+    type: string,
+    page = 1,
+    limit = 250,
+    urls: url[] = []):Promise<url[]> {
     const allowedTypes = ['products', 'brands', 'categories']
     if (!allowedTypes.includes(type)) throw new Error('The requested resource requested is not supported by this method')
     const includeFields = 'custom_url'
     const isVisibleParam = type === 'products' ? '&is_visible=true' : ''
+    const includeParam = type === 'products' ? '&include=custom_fields' : ''
     try {
         console.log(`Getting page ${page} of ${type} urls.`)
-        const { data, meta } = await bigCommerceV3.get(`/catalog/${type}?limit=${limit}&page=${page}&include_fields=${includeFields}${isVisibleParam}`)
-        const newUrls = data.map(product => product.custom_url.url)
+        const { data, meta } = await bigCommerceV3.get(`/catalog/${type}?limit=${limit}&page=${page}&include_fields=${includeFields}${isVisibleParam}${includeParam}`)
+
+        const newUrls:url[] = data.map(record => {
+            let priority = undefined
+            if (type === 'products')
+                priority = getPriority(record)
+            return priority 
+            ? {
+                loc: record.custom_url.url,
+                priority
+            }
+            : {
+                loc: record.custom_url.url
+            }
+        })
+
         urls = urls.concat(newUrls)
         if (meta.pagination.total > meta.pagination.current_page) {
             page++
@@ -67,12 +118,17 @@ const getCatalogUrls = async (type, page = 1, limit = 250, urls = []) => {
             return urls
         }
     } catch (err) {
-        console.error(err)
+        const d = new Date()
+        console.error(`${d.toUTCString()} Error retrieving  ${type} page ${page}`, err)
         throw err
     }
 }
 
-const getPageUrls = async (count, page = 1, limit = 250, urls = []) => {
+async function getPageUrls(
+    count?: number,
+    page = 1,
+    limit = 250,
+    urls:url[] = []): Promise<url[]>  {
     if (!count) {
         const data = await bigCommerceV2.get(`/pages/count`)
         count = data.count
@@ -82,10 +138,12 @@ const getPageUrls = async (count, page = 1, limit = 250, urls = []) => {
     try {
         console.log(`Getting page ${page} of Web Page urls`)
         const pages = await bigCommerceV2.get(`/pages?limit=${limit}&page=${page}`)
-        const newUrls = pages
+        const newUrls:url[] = pages
             .filter(page => page.url ? true : false)
             .filter(page => page.is_visible ? true : false)
-            .map(page => page.url)
+            .map(page => ({
+                loc: page.url
+            }))
         urls = urls.concat(newUrls)
         if (page * limit >= count)
             return urls
@@ -93,13 +151,17 @@ const getPageUrls = async (count, page = 1, limit = 250, urls = []) => {
             page++
             return getPageUrls(count, page, limit, urls)
         }
-    } catch (err) {
-        console.error(err)
+    } catch (err) {const d = new Date()
+        console.error(`${d.toUTCString()} Error getting page URLs`, err)
         throw err
     }
 }
 
-const getBlogPostUrls = async (count, page = 1, limit = 250, urls = []) => {
+async function getBlogPostUrls(
+    count?: number,
+    page = 1,
+    limit = 250,
+    urls:url[] = []): Promise<url[]> {
     if (!count) {
         const data = await bigCommerceV2.get(`/blog/posts/count`)
         count = data.count
@@ -111,7 +173,9 @@ const getBlogPostUrls = async (count, page = 1, limit = 250, urls = []) => {
         const posts = await bigCommerceV2.get(`/blog/posts?limit=${limit}&page=${page}`)
         const newUrls = posts
             .filter(post => post.is_published ? true : false)
-            .map(post => post.url)
+            .map(post => ({
+                loc: post.url
+            }))
         urls = urls.concat(newUrls)
         if (page * limit >= count)
             return urls
@@ -120,21 +184,20 @@ const getBlogPostUrls = async (count, page = 1, limit = 250, urls = []) => {
             return getBlogPostUrls(count, page, limit, urls)
         }
     } catch (err) {
-        console.error(err)
+        const d = new Date()
+        console.error(`${d.toUTCString()} Error getting blog post URLs`, err)
         throw err
     }
 }
 
-const createSitemapsFromUrls = async (urls, storefrontUrl) => {
+const createSitemapsFromUrls = async (urls:url[], storefrontUrl:string) => {
     console.log(`Generating and uploading sitemaps from URLs`)
     const sitemaps = []
     for (let i = 0; i < urls.length; i += maxUrlsPerSitemap) {
         const urlsChunk = urls.slice(i, (i + maxUrlsPerSitemap))
         const transformedUrls = urlsChunk.map(url => (
             {
-                url: {
-                    loc: url
-                }
+                url
             }
         ))
 
@@ -150,26 +213,32 @@ const createSitemapsFromUrls = async (urls, storefrontUrl) => {
 
 const job = async () => {
     try {
+        const d = new Date()
+        console.log(`${d.toUTCString()} Starting job`) 
         // Create sitemaps directory in webdav if it doesn't exist
         if (await webdav.exists(defaultWebdavPath) === false) {
             await webdav.createDirectory(defaultWebdavPath)
         }
 
         const storefrontUrl = await getStorefrontUrl()
+        if(!storefrontUrl) throw new Error('No storefront URL available, exiting')
 
-        const blogPostUrls = await getBlogPostUrls()
-        const pageUrls = await getPageUrls()
-        const productUrls = await getCatalogUrls('products')
-        const categoryUrls = await getCatalogUrls('categories')
-        const brandUrls = await getCatalogUrls('brands')
-
-        const allPaths = categoryUrls
+        const productUrls = await getCatalogUrls('products'),
+        blogPostUrls = await getBlogPostUrls(),
+        pageUrls = await getPageUrls(),
+        categoryUrls = await getCatalogUrls('categories'),
+        brandUrls = await getCatalogUrls('brands'),
+        allRelativeUrls:url[] = categoryUrls
             .concat(productUrls)
             .concat(brandUrls)
             .concat(pageUrls)
             .concat(blogPostUrls)
+        
 
-        const allUrls = allPaths.map(path => storefrontUrl + path)
+        const allUrls = allRelativeUrls.map(url => {
+            url.loc = storefrontUrl + url.loc
+            return url
+        })
 
         const sitemaps = await createSitemapsFromUrls(allUrls, storefrontUrl)
 
@@ -192,7 +261,8 @@ const job = async () => {
         console.log(`Individual Sitemaps: `, sitemaps)
         console.log(`Sitemap index: `, `${storefrontUrl}${sitemapIndexUrl}`)
     } catch (err) {
-        console.log(`Job failed with error`, err)
+        const d = new Date()
+        console.error(`${d.toUTCString()} Job failed with error`, err)
     }
 }
 
