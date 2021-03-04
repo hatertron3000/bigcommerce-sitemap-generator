@@ -22,9 +22,7 @@ The app creates multiple XML sitemaps, a sitemap index, then uploads them your s
 4. Install dependencies: `npm i`
 5. Make a copy of `.env.template` and name it `.env`
 6. Fill in the API and WebDAV credentials. Note: The API keys need read-only access to Store Information, Products and Store Content scopes.
-7. Run `npx run start`
-
-If prompted to install the `ts-code` package, type `Y` and continue.
+7. Run `npm run start`
 
 ## TODO
 - Automatically delete older sitemaps
