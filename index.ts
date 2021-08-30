@@ -111,7 +111,7 @@ async function getCatalogUrls(
         })
 
         urls = urls.concat(newUrls)
-        if (meta.pagination.total > meta.pagination.current_page) {
+        if (meta.pagination.total_pages > meta.pagination.current_page) {
             page++
             return getCatalogUrls(type, page, limit, urls)
         } else {
